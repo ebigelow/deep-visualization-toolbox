@@ -4,9 +4,7 @@ import sys
 import importlib
 from collections import OrderedDict
 import numpy as np
-from threading import Lock, RLock, Thread
 import time
-import glob
 
 try:
     import cv2
