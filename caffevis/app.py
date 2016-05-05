@@ -216,13 +216,12 @@ class CaffeVisApp(BaseApp):
         if self.state.save_activations:
             self.state.save_activations = False
 
-            # code copied from input_fetcher
+            # Code for getting available images, copied from `input_fetcher`
             available_files = []
             match_flags = re.IGNORECASE if self.settings.static_files_ignore_case else 0
             for filename in os.listdir(self.settings.static_files_dir):
                 if re.match(self.settings.static_files_regexp, filename, match_flags):
                     available_files.append(filename)
-
 
             out_dir = self.settings.out_dir
             if not os.path.isdir(out_dir): os.mkdir(out_dir)
@@ -232,11 +231,12 @@ class CaffeVisApp(BaseApp):
 
             for static_filename in available_files:
 
+                # Load image from `static_filename`
                 im = cv2_read_file_rgb(os.path.join(self.settings.static_files_dir, static_filename))
                 if not self.settings.static_file_stretch_mode:
                     im = crop_to_square(im)
 
-                # TODO: hopefully this works!
+                # Update state image
                 with self.state.lock:
                     self.state.next_frame = im
 
