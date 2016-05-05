@@ -3,6 +3,7 @@
 
 import sys
 import os
+import re
 import cv2
 import numpy as np
 import time
@@ -17,6 +18,8 @@ from caffe_proc_thread import CaffeProcThread
 from jpg_vis_loading_thread import JPGVisLoadingThread
 from caffevis_app_state import CaffeVisAppState
 from caffevis_helper import get_pretty_layer_name, read_label_file, load_sprite_image, load_square_sprite_image, check_force_backward_true
+
+from image_misc import cv2_read_file_rgb, crop_to_square
 
 
 
@@ -118,6 +121,9 @@ class CaffeVisApp(BaseApp):
             self.net_layer_info[key]['tiles_rc'] = get_tiles_height_width_ratio(blob_shape[1], self.settings.caffevis_layers_aspect_ratio)
             self.net_layer_info[key]['tile_rows'] = self.net_layer_info[key]['tiles_rc'][0]
             self.net_layer_info[key]['tile_cols'] = self.net_layer_info[key]['tiles_rc'][1]
+        #     # Edited
+        #     print self.net_layer_info[key].keys()
+        # print self.net.blobs.keys()
 
     def start(self):
         self.state = CaffeVisAppState(self.net, self.settings, self.bindings, self.net_layer_info)
@@ -187,6 +193,89 @@ class CaffeVisApp(BaseApp):
                 print 'CaffeVisApp.draw: skipping'
             return False
 
+
+
+        # ----------------------------------------------------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------------------------
+        # Edited
+        #
+        # When the user presses `x`, we save the current activation for each layer to a file. This works for both
+        #   regular activation, and when we've locked to one specific neuron. Note that this is giving RGB values,
+        #   so I'm not sure if those are tweaked versions of the originals.
+        # 
+        # import numpy as np
+        # import pandas as pd
+        # labels = [i.replace('\n','') for i in open('labels.txt').readlines()]
+        # df = pd.read_pickle('experiments/nolock.pk')
+        # 
+        # for i in zip(df['image'], [labels[a.mean(axis=(1,2,3)).argmax()] for a in df['prob']]):
+        #      print i
+        # 
+        # 
+
+        if self.state.save_activations:
+            self.state.save_activations = False
+
+            # code copied from input_fetcher
+            available_files = []
+            match_flags = re.IGNORECASE if self.settings.static_files_ignore_case else 0
+            for filename in os.listdir(self.settings.static_files_dir):
+                if re.match(self.settings.static_files_regexp, filename, match_flags):
+                    available_files.append(filename)
+
+
+            out_dir = self.settings.out_dir
+            if not os.path.isdir(out_dir): os.mkdir(out_dir)
+
+            import pandas as pd
+            row_data = []
+
+            for static_filename in available_files:
+
+                im = cv2_read_file_rgb(os.path.join(self.settings.static_files_dir, static_filename))
+                if not self.settings.static_file_stretch_mode:
+                    im = crop_to_square(im)
+
+                # TODO: hopefully this works!
+                with self.state.lock:
+                    self.state.next_frame = im
+
+                # Get activation RGB values for each layer
+                row = {}
+                for layer in self.state._layers:
+                    with self.state.lock:
+                        self.state.layer = layer
+                    layer_data = self._draw_layer_pane(panes['caffevis_layers'])
+                    row[layer] = layer_data
+
+                row['image'] = static_filename
+                row_data.append(row)
+
+            # Collect rows into pandas dataframe, indexed by: ['image', 'conv1', 'pool1', ...]
+            df = pd.DataFrame(row_data)
+
+            # If we've locked this to a specific unit...
+            if self.state.backprop_selection_frozen:
+                locked_neuron = self.state.backprop_layer + ':' + self.state.backprop_unit
+                s = out_dir + '/' + locked_neuron + '.pk'
+            else:
+                s = out_dir + '/nolock.pk'
+
+            df.to_pickle(s)
+            print 'File saved to' + s
+
+            f = open('labels.txt','w')
+            f.write('\n'.join(self.labels))
+
+
+
+        # ----------------------------------------------------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
         with self.state.lock:
             # Hold lock throughout drawing
             do_draw = self.state.drawing_stale and self.state.caffe_net_state == 'free'
@@ -195,6 +284,10 @@ class CaffeVisApp(BaseApp):
                 self.state.caffe_net_state = 'draw'
 
         if do_draw:
+
+
+
+
             if self.debug_level > 1:
                 print 'CaffeVisApp.draw: drawing'
 
@@ -426,6 +519,8 @@ class CaffeVisApp(BaseApp):
             if self.state.backprop_selection_frozen and self.state.layer == self.state.backprop_layer:
                 highlights[self.state.backprop_unit] = self.settings.caffevis_layer_clr_back_sel  # in [0,1] range
 
+        # # Edited
+        # print display_3D.shape
         _, display_2D = tile_images_make_tiles(display_3D, hw = (tile_rows,tile_cols), padval = padval, highlights = highlights)
 
         if display_3D_highres is None:
@@ -472,6 +567,16 @@ class CaffeVisApp(BaseApp):
                 
         if mode == 'selected':
             unit_data = layer_data_normalized[self.state.selected_unit]
+
+
+            # # Edited
+            # # -----------------------
+            # print '*'*100
+            # print unit_data.mean(axis=(0,1))
+
+
+
+
             unit_data_resize = ensure_uint255_and_resize_to_fit(unit_data, pane.data.shape)
             pane.data[0:unit_data_resize.shape[0], 0:unit_data_resize.shape[1], :] = unit_data_resize
         elif mode == 'prob_labels':

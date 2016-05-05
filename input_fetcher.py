@@ -174,4 +174,5 @@ class InputImageFetcher(CodependentThread):
                 if not self.static_file_stretch_mode:
                     im = crop_to_square(im)
                 self.latest_static_frame = im
+
             self._increment_and_set_frame(self.latest_static_frame, False)

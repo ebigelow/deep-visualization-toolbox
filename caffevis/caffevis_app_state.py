@@ -28,6 +28,9 @@ class CaffeVisAppState(object):
         self.last_key_at = 0
         self.quit = False
 
+        # Edited
+        self.save_activations = False
+
         self._reset_user_state()
 
     def _reset_user_state(self):
@@ -172,6 +175,12 @@ class CaffeVisAppState(object):
 
             elif tag == 'toggle_unit_jpgs':
                 self.show_unit_jpgs = not self.show_unit_jpgs
+
+            # ==============
+            # Edited
+             
+            elif tag == 'save_activations':
+                self.save_activations = True
 
             else:
                 key_handled = False
