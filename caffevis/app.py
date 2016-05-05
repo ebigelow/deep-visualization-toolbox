@@ -187,94 +187,83 @@ class CaffeVisApp(BaseApp):
     def redraw_needed(self):
         return self.state.redraw_needed()
 
+    def _save_activations(self, panes):
+        """
+        When the user presses `x`, we save the current activation for each layer to a file. This works for both
+          regular activation, and when we've locked to one specific neuron. Note that this is giving RGB values,
+          so I'm not sure if those are tweaked versions of the originals.
+
+        import numpy as np
+        import pandas as pd
+        labels = [i.replace('\n','') for i in open('labels.txt').readlines()]
+        df = pd.read_pickle('experiments/nolock.pk')
+        
+        for i in zip(df['image'], [labels[a.mean(axis=(1,2,3)).argmax()] for a in df['prob']]):
+             print i
+
+        """
+        
+        # Code for getting available images, copied from `input_fetcher`
+        available_files = []
+        match_flags = re.IGNORECASE if self.settings.static_files_ignore_case else 0
+        for filename in os.listdir(self.settings.static_files_dir):
+            if re.match(self.settings.static_files_regexp, filename, match_flags):
+                available_files.append(filename)
+
+        out_dir = self.settings.out_dir
+        if not os.path.isdir(out_dir): os.mkdir(out_dir)
+
+        import pandas as pd
+        row_data = []
+
+        for static_filename in available_files:
+
+            # Load image from `static_filename`
+            im = cv2_read_file_rgb(os.path.join(self.settings.static_files_dir, static_filename))
+            if not self.settings.static_file_stretch_mode:
+                im = crop_to_square(im)
+
+            # Update state image
+            with self.state.lock:
+                self.state.next_frame = im
+
+            # Get activation RGB values for each layer
+            row = {}
+            for layer in self.state._layers:
+                with self.state.lock:
+                    self.state.layer = layer
+                layer_data = self._draw_layer_pane(panes['caffevis_layers'])
+                row[layer] = layer_data
+
+            row['image'] = static_filename
+            row_data.append(row)
+
+        # Collect rows into pandas dataframe, indexed by: ['image', 'conv1', 'pool1', ...]
+        df = pd.DataFrame(row_data)
+
+        # If we've locked this to a specific unit...
+        if self.state.backprop_selection_frozen:
+            locked_neuron = self.state.backprop_layer + ':' + self.state.backprop_unit
+            s = out_dir + '/' + locked_neuron + '.pk'
+        else:
+            s = out_dir + '/nolock.pk'
+
+        df.to_pickle(s)
+        print 'File saved to' + s
+
+        f = open(out_dir + '/labels.txt','w')
+        f.write('\n'.join(self.labels))
+
     def draw(self, panes):
         if self._can_skip_all(panes):
             if self.debug_level > 1:
                 print 'CaffeVisApp.draw: skipping'
             return False
 
-
-
-        # ----------------------------------------------------------------------------------------------------------------------------------------
-        # ----------------------------------------------------------------------------------------------------------------------------------------
         # Edited
-        #
-        # When the user presses `x`, we save the current activation for each layer to a file. This works for both
-        #   regular activation, and when we've locked to one specific neuron. Note that this is giving RGB values,
-        #   so I'm not sure if those are tweaked versions of the originals.
-        # 
-        # import numpy as np
-        # import pandas as pd
-        # labels = [i.replace('\n','') for i in open('labels.txt').readlines()]
-        # df = pd.read_pickle('experiments/nolock.pk')
-        # 
-        # for i in zip(df['image'], [labels[a.mean(axis=(1,2,3)).argmax()] for a in df['prob']]):
-        #      print i
-        # 
-        # 
-
         if self.state.save_activations:
             self.state.save_activations = False
-
-            # Code for getting available images, copied from `input_fetcher`
-            available_files = []
-            match_flags = re.IGNORECASE if self.settings.static_files_ignore_case else 0
-            for filename in os.listdir(self.settings.static_files_dir):
-                if re.match(self.settings.static_files_regexp, filename, match_flags):
-                    available_files.append(filename)
-
-            out_dir = self.settings.out_dir
-            if not os.path.isdir(out_dir): os.mkdir(out_dir)
-
-            import pandas as pd
-            row_data = []
-
-            for static_filename in available_files:
-
-                # Load image from `static_filename`
-                im = cv2_read_file_rgb(os.path.join(self.settings.static_files_dir, static_filename))
-                if not self.settings.static_file_stretch_mode:
-                    im = crop_to_square(im)
-
-                # Update state image
-                with self.state.lock:
-                    self.state.next_frame = im
-
-                # Get activation RGB values for each layer
-                row = {}
-                for layer in self.state._layers:
-                    with self.state.lock:
-                        self.state.layer = layer
-                    layer_data = self._draw_layer_pane(panes['caffevis_layers'])
-                    row[layer] = layer_data
-
-                row['image'] = static_filename
-                row_data.append(row)
-
-            # Collect rows into pandas dataframe, indexed by: ['image', 'conv1', 'pool1', ...]
-            df = pd.DataFrame(row_data)
-
-            # If we've locked this to a specific unit...
-            if self.state.backprop_selection_frozen:
-                locked_neuron = self.state.backprop_layer + ':' + self.state.backprop_unit
-                s = out_dir + '/' + locked_neuron + '.pk'
-            else:
-                s = out_dir + '/nolock.pk'
-
-            df.to_pickle(s)
-            print 'File saved to' + s
-
-            f = open('labels.txt','w')
-            f.write('\n'.join(self.labels))
-
-
-
-        # ----------------------------------------------------------------------------------------------------------------------------------------
-        # ----------------------------------------------------------------------------------------------------------------------------------------
-
-
-
-
+            self._save_activations(panes)
 
         with self.state.lock:
             # Hold lock throughout drawing
@@ -284,9 +273,6 @@ class CaffeVisApp(BaseApp):
                 self.state.caffe_net_state = 'draw'
 
         if do_draw:
-
-
-
 
             if self.debug_level > 1:
                 print 'CaffeVisApp.draw: drawing'
