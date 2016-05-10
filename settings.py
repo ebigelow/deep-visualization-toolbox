@@ -22,8 +22,13 @@ sys.dont_write_bytecode = False
 
 
 # Edited
-out_dir = locals().get('static_files_dir', 'experiments')
-static_files_dir = locals().get('static_files_dir', 'input_images')
+
+save_layers = locals().get('save_layers', ['fc8', 'fc7'])
+
+i_ = 'remote_gauss'
+out_dir = locals().get('out_dir', 'experiments/' + i_)
+static_files_dir = locals().get('static_files_dir', 'images/' + i_)
+#static_files_dir = locals().get('static_files_dir', 'input_images')
 
 
 

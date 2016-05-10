@@ -215,11 +215,26 @@ class CaffeVisApp(BaseApp):
 
         import pandas as pd
         row_data = []
+        import time
+        t1 = time.time()
+
+        n = 0
+        ncap = 100
 
         for static_filename in available_files:
+            if n > ncap: break
+
+            p = os.path.join(self.settings.static_files_dir, static_filename)
+            if static_filename.split('.')[-1] in ('.txt','.sh') or os.path.getsize(p) < 3000:
+                print static_filename
+                continue
 
             # Load image from `static_filename`
-            im = cv2_read_file_rgb(os.path.join(self.settings.static_files_dir, static_filename))
+            try:
+                im = cv2_read_file_rgb(p)
+            except:
+                print 'ERROR: ', static_filename
+                continue
             if not self.settings.static_file_stretch_mode:
                 im = crop_to_square(im)
 
@@ -227,16 +242,32 @@ class CaffeVisApp(BaseApp):
             with self.state.lock:
                 self.state.next_frame = im
 
-            # Get activation RGB values for each layer
-            row = {}
-            for layer in self.state._layers:
-                with self.state.lock:
-                    self.state.layer = layer
-                layer_data = self._draw_layer_pane(panes['caffevis_layers'])
-                row[layer] = layer_data
+            # Get meta info about image from pickle file, add to row dict
+            img_name = static_filename.split('.')[0]
+            if 'meta.pk' in os.listdir(self.settings.static_files_dir): 
+                if not hasattr(self, 'meta'):
+                    import pickle
+                    meta = open(self.settings.static_files_dir + '/meta.pk', 'r')
+                    self.meta = pickle.load(meta)
 
-            row['image'] = static_filename
+                row = self.meta[img_name]
+            else:
+                row = {}
+                row['image'] = img_name
+
+            # Get activation RGB values for each layer
+            for layer in self.state._layers:
+                if layer in self.settings.save_layers:
+                    with self.state.lock:
+                        self.state.layer = layer
+                    layer_data = self._draw_layer_pane(panes['caffevis_layers'])
+                    if layer == 'fc8':
+                        layer_data = layer_data[:,0,0,0]
+                    row[layer] = layer_data
+
             row_data.append(row)
+            n += 1
+
 
         # Collect rows into pandas dataframe, indexed by: ['image', 'conv1', 'pool1', ...]
         df = pd.DataFrame(row_data)
@@ -249,7 +280,9 @@ class CaffeVisApp(BaseApp):
             s = out_dir + '/nolock.pk'
 
         df.to_pickle(s)
-        print 'File saved to' + s
+        print 'File saved to: ' + s
+        t2 = time.time() - t1
+        print 'time: {}'.format(t2)
 
         f = open(out_dir + '/labels.txt','w')
         f.write('\n'.join(self.labels))
